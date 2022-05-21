@@ -1,5 +1,6 @@
 package pubsub.pipeline.app;
 
+import com.google.api.gax.core.InstantiatingExecutorProvider;
 import com.google.cloud.pubsub.v1.MessageReceiver;
 import com.google.cloud.pubsub.v1.Subscriber;
 import com.google.pubsub.v1.ProjectSubscriptionName;
@@ -18,22 +19,35 @@ public class Coordinator implements ApplicationEventListener<StartupEvent> {
 
     private MessageReceiver receiver;
 
-    Coordinator(MyMessageReceiver receiver) {
+    public Coordinator(MyMessageReceiver receiver) {
         this.receiver = receiver;
     }
 
     @Override
     public void onApplicationEvent(StartupEvent event) {
-        // Create Pub/Sub stuff, so that Micronaut does not control its lifecycle,
-        // instead having the bean control the
-        // Pub/Sub lifecycle.
+        createSubscriber().startAsync().awaitRunning();
+        LOG.info("Listening for messages on subscription.");
+    }
+
+    /**
+     * Create Pub/Sub stuff, so that Micronaut does not control its lifecycle, instead having this bean's code control
+     * the Pub/Sub lifecycle, so we can shut down the subscriber before shutting down the publisher.
+     */
+    private Subscriber createSubscriber() {
         ProjectSubscriptionName subscriptionName = ProjectSubscriptionName.of("micronaut-gcp-pubsub-examples",
                 "messages-unvalidated-sub");
 
-        Subscriber subscriber = Subscriber.newBuilder(subscriptionName, receiver).build();
+        // Setting the number of threads for processing messages. This could come from config too.
+        InstantiatingExecutorProvider executorProvider = InstantiatingExecutorProvider.newBuilder()
+                .setExecutorThreadCount(50).build();
 
-        subscriber.startAsync().awaitRunning();
+        return Subscriber
+                .newBuilder(subscriptionName, receiver)
+                .setExecutorProvider(executorProvider)
+                .build();
+    }
 
-        LOG.info("Listening for messages on " +  subscriptionName.toString() + ".");
+    public void shutdown() {
+
     }
 }
